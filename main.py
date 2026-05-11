@@ -55,6 +55,10 @@ class RegresionPolinomial:
 
         self.coef = np.linalg.solve(C, B)
         condicion = np.linalg.cond(C)
+        
+        print(f"\n--- Matriz de Coeficientes (Grado {self.grado}) ---")
+        print(self.coef)
+        print("--------------------------------------------------\n")
 
         return condicion
 
@@ -129,7 +133,7 @@ def comparar_modelos(x: np.ndarray, y: np.ndarray) -> int:
     x_train, x_test = x[:split], x[split:]
     y_train, y_test = y[:split], y[split:]
 
-    grados = [1, 2, 3, 5, 10]
+    grados = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     resultados: List[Tuple[int, float]] = []
 
     print("\n=== REPORTE METRICULAR DE ESTUDIO COMPARATIVO ===\n")
@@ -183,7 +187,7 @@ def animacion_grados(x: np.ndarray, y: np.ndarray) -> None:
     representando el comportamiento gráfico del sesgo o sobreajuste ante aumento progresivo de P-dimensión.
     """
     plt.ion()
-    for grado in range(1, 8):
+    for grado in range(1, 16):
         modelo = RegresionPolinomial(grado)
         modelo.ajustar(x, y)
 
