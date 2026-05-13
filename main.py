@@ -111,60 +111,67 @@ class RegresionPolinomial:
         ss_res = np.sum((y - y_pred) ** 2)
         return 1.0 - (ss_res / ss_total)
 
+    def mostrar_coeficientes(self) -> None:
+        """
+        Imprime una tabla formateada con los coeficientes del modelo ajustado.
+        Cada fila muestra el término polinomial y su coeficiente correspondiente.
+
+        Raises:
+            ValueError: Si el modelo no ha sido ajustado previamente.
+        """
+        if self.coef is None:
+            raise ValueError("El modelo no ha sido ajustado. Llame a ajustar() primero.")
+
+        sep = "-" * 42
+        print(f"\nCoeficientes - Grado {self.grado}  (m = {self.grado})")
+        print(sep)
+        print(f"  {'Indice':<8} {'Termino':<10} {'Coeficiente':>18}")
+        print(sep)
+        for j, c in enumerate(self.coef):
+            indice  = f"a{j}"
+            termino = "1" if j == 0 else ("x" if j == 1 else f"x^{j}")
+            print(f"  {indice:<8} {termino:<10} {c:>18.6f}")
+        print(sep + "\n")
+
 
 # ==========================================
 # FUNCIONES DE VISUALIZACIÓN Y ANÁLISIS
 # ==========================================
 
-def comparar_modelos(x: np.ndarray, y: np.ndarray) -> int:
-    """
-    Evalúa modelos polinomiales de grado 1 a 15 usando un split 80/20 (hold-out),
-    e identifica el grado con menor RECM en el conjunto de prueba.
+def obtener_metricas(modelo: RegresionPolinomial, x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
+    """Calcula RECM, R2 y número de condición para un modelo y datos dados."""
+    y_pred = modelo.predecir(x)
+    cond = np.linalg.cond(modelo.construir_phi(x).T @ modelo.construir_phi(x))
+    try:
+        recm_val = modelo.recm(y, y_pred)
+    except ValueError:
+        recm_val = np.nan
+    r2_val = modelo.r2(y, y_pred)
+    return recm_val, r2_val, cond
 
-    Args:
-        x (np.ndarray): Variable independiente.
-        y (np.ndarray): Variable dependiente.
-
-    Returns:
-        int: Grado óptimo según la RECM en el conjunto de prueba.
-    """
-    n = len(x)
-    split = int(0.8 * n)
-
+def comparar_modelos(x: np.ndarray, y: np.ndarray, max_grado: int = 15) -> int:
+    """Evalúa modelos de grado 1 a max_grado y retorna el óptimo."""
+    split = int(0.8 * len(x))
     x_train, x_test = x[:split], x[split:]
     y_train, y_test = y[:split], y[split:]
 
-    resultados: List[Tuple[int, float]] = []
+    resultados = []
+    print(f"\n=== COMPARACIÓN DE MODELOS (1 a {max_grado}) ===\n")
 
-    print("\n=== COMPARACIÓN DE MODELOS (grados 1 a 15) ===\n")
-
-    for grado in range(1, 16):
+    for grado in range(1, max_grado + 1):
         modelo = RegresionPolinomial(grado)
-        cond = modelo.ajustar(x_train, y_train)
+        modelo.ajustar(x_train, y_train)
+        
+        recm_train, _, _ = obtener_metricas(modelo, x_train, y_train)
+        recm_test, r2_test, cond = obtener_metricas(modelo, x_test, y_test)
+        
+        if not np.isnan(recm_test):
+            resultados.append((grado, recm_test))
 
-        y_train_pred = modelo.predecir(x_train)
-        y_test_pred = modelo.predecir(x_test)
+        print(f"Grado {grado}: RECM Test: {recm_test:.4f} | R²: {r2_test:.4f} | Cond: {cond:.2e}")
 
-        try:
-            recm_train = modelo.recm(y_train, y_train_pred)
-            recm_test = modelo.recm(y_test, y_test_pred)
-        except ValueError as e:
-            print(f"Grado {grado}: {e}")
-            continue
-
-        r2_val = modelo.r2(y_test, y_test_pred)
-        resultados.append((grado, recm_test))
-
-        print(f"Grado {grado}")
-        print(f"  RECM Train: {recm_train:.4f}")
-        print(f"  RECM Test:  {recm_test:.4f}")
-        print(f"  R²:         {r2_val:.4f}")
-        print(f"  Condición:  {cond:.2e}")
-        print("-" * 40)
-
-    mejor_grado = min(resultados, key=lambda item: item[1])[0]
-    print(f"\nGrado óptimo seleccionado automáticamente: {mejor_grado}")
-
+    mejor_grado = min(resultados, key=lambda x: x[1])[0]
+    print(f"\nGrado óptimo sugerido: {mejor_grado}")
     return mejor_grado
 
 
@@ -222,64 +229,41 @@ def animacion_grados(x: np.ndarray, y: np.ndarray) -> None:
     plt.show()
 
 
-def modo_manual(x: np.ndarray, y: np.ndarray) -> None:
-    """
-    Modo interactivo: permite navegar entre grados polinomiales con las teclas
-    [n] (subir), [p] (bajar) y [q] (salir). Acepta un grado inicial por consola.
+def analizar_grado(x: np.ndarray, y: np.ndarray, grado: int, mostrar_tabla: bool = True):
+    """Ajusta, calcula métricas e imprime resultados para un grado específico."""
+    modelo = RegresionPolinomial(grado)
+    cond = modelo.ajustar(x, y)
+    recm, r2, _ = obtener_metricas(modelo, x, y)
+    
+    if mostrar_tabla:
+        modelo.mostrar_coeficientes()
+        print(f"RECM: {recm:.4f} | R²: {r2:.4f} | Condición: {cond:.2e}")
+    
+    return modelo, recm, r2, cond
 
-    Args:
-        x (np.ndarray): Variable independiente.
-        y (np.ndarray): Variable dependiente.
-    """
-    entrada = input("Ingrese el grado inicial (entero >= 1, Enter para comenzar en 1): ").strip()
-    try:
-        grado = max(1, int(entrada)) if entrada else 1
-    except ValueError:
-        print("Entrada inválida. Se usará grado 1.")
-        grado = 1
+def modo_manual(x: np.ndarray, y: np.ndarray) -> None:
+    """Navegación interactiva de grados polinomiales."""
+    entrada = input("Grado inicial (Enter para 1): ").strip()
+    grado = max(1, int(entrada)) if entrada.isdigit() else 1
 
     while True:
-        modelo = RegresionPolinomial(grado)
-        cond = modelo.ajustar(x, y)
-
-        y_pred = modelo.predecir(x)
-
-        try:
-            recm_val = modelo.recm(y, y_pred)
-            recm_str = f"{recm_val:.4f}"
-        except ValueError as e:
-            recm_str = f"N/A ({e})"
-
-        r2_val = modelo.r2(y, y_pred)
-
-        x_suave = np.linspace(min(x), max(x), 300)
-        y_suave = modelo.predecir(x_suave)
-
+        modelo, recm, r2, cond = analizar_grado(x, y, grado, mostrar_tabla=False)
+        
+        # Plot rápido
+        x_s = np.linspace(x.min(), x.max(), 300)
         plt.figure(figsize=(8, 5))
-        plt.scatter(x, y, alpha=0.5, label="Datos observados")
-        plt.plot(x_suave, y_suave, color='red', label=f"Grado {grado}")
-        plt.title(f"Ajuste polinomial — Grado {grado}")
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.grid(True)
-        plt.legend()
-        plt.show(block=False)
-        plt.pause(0.5)
+        plt.scatter(x, y, alpha=0.5)
+        plt.plot(x_s, modelo.predecir(x_s), 'r', label=f"Grado {grado}")
+        plt.title(f"Manual: Grado {grado} | RECM: {recm:.4f}")
+        plt.legend(); plt.show(block=False); plt.pause(0.5)
 
-        print(f"\nGrado: {grado}")
-        print(f"  RECM:      {recm_str}")
-        print(f"  R²:        {r2_val:.4f}")
-        print(f"  Condición: {cond:.2e}")
-
-        accion = input("\n[n] Subir grado  [p] Bajar grado  [q] Salir: ").strip().lower()
+        print(f"\nGrado {grado} -> RECM: {recm:.4f} | R²: {r2:.4f} | Cond: {cond:.2e}")
+        acc = input("[n] Siguiente | [p] Anterior | [q] Salir: ").lower()
         plt.close()
 
-        if accion == "n":
-            grado += 1
-        elif accion == "p" and grado > 1:
-            grado -= 1
-        elif accion == "q":
-            break
+        if acc == 'n': grado += 1
+        elif acc == 'p' and grado > 1: grado -= 1
+        elif acc == 'q': break
 
 
 # ==========================================
@@ -341,7 +325,21 @@ def generar_datos_aleatorios() -> Tuple[np.ndarray, np.ndarray]:
 
 
 # ==========================================
-# RUTINA DE EJECUCIÓN PRINCIPAL
+# AJUSTE CON GRADO ESPECIFICO
+# ==========================================
+
+def ajustar_grado_especifico(x: np.ndarray, y: np.ndarray) -> None:
+    """Solicita un grado y muestra análisis completo."""
+    ent = input("Grado deseado (entero >= 1): ").strip()
+    if ent.isdigit() and int(ent) >= 1:
+        modelo, _, _, _ = analizar_grado(x, y, int(ent))
+        graficar(x, y, modelo, f"Grado {ent}")
+    else:
+        print("Entrada inválida.")
+
+
+# ==========================================
+# RUTINA DE EJECUCION PRINCIPAL
 # ==========================================
 
 def main() -> None:
@@ -351,36 +349,25 @@ def main() -> None:
     x_global, y_global = cargar_datos()
 
     while True:
-        print("\n===== REGRESIÓN POLINOMIAL =====")
-        print("1. Comparar grados y seleccionar el óptimo automáticamente.")
-        print("2. Animación del ajuste para grados 1 a 15.")
-        print("3. Modo interactivo (navegar entre grados manualmente).")
-        print("4. Cargar nuevo dataset.")
-        print("5. Salir.")
+        print("\n=== REGRESIÓN POLINOMIAL ===")
+        print("1. Comparar y seleccionar óptimo")
+        print("2. Animación (1-15)")
+        print("3. Modo interactivo")
+        print("4. Grado específico (Tabla)")
+        print("5. Recargar datos")
+        print("6. Salir")
 
-        opcion = input("\nOpción: ").strip()
+        opc = input("\nSelección: ").strip()
 
-        if opcion == "1":
-            mejor_grado = comparar_modelos(x_global, y_global)
-            modelo = RegresionPolinomial(mejor_grado)
-            modelo.ajustar(x_global, y_global)
-            graficar(x_global, y_global, modelo, f"Ajuste óptimo — Grado {mejor_grado}")
-
-        elif opcion == "2":
-            animacion_grados(x_global, y_global)
-
-        elif opcion == "3":
-            modo_manual(x_global, y_global)
-
-        elif opcion == "4":
-            x_global, y_global = cargar_datos()
-
-        elif opcion == "5":
-            print("Saliendo...")
-            break
-
-        else:
-            print("Opción no válida. Ingrese un número del 1 al 5.")
+        if opc == "1":
+            grado = comparar_modelos(x_global, y_global)
+            modelo, _, _, _ = analizar_grado(x_global, y_global, grado)
+            graficar(x_global, y_global, modelo, f"Óptimo: Grado {grado}")
+        elif opc == "2": animacion_grados(x_global, y_global)
+        elif opc == "3": modo_manual(x_global, y_global)
+        elif opc == "4": ajustar_grado_especifico(x_global, y_global)
+        elif opc == "5": x_global, y_global = cargar_datos()
+        elif opc == "6": break
 
 
 if __name__ == "__main__":
