@@ -78,19 +78,33 @@ class RegresionPolinomial:
         Phi = self.construir_phi(x)
         return Phi @ self.coef
 
-    def ecm(self, y: np.ndarray, y_pred: np.ndarray) -> float:
+    def recm(self, y: np.ndarray, y_pred: np.ndarray) -> float:
         """
-        Aislamiento funcional y métrico que retorna el valor de Mean Squared Error (MSE o ECM).
-        Utilizado para denotar la precisión estadística frente a penalización cuadrática por sesgo local empírico.
-        
+        Raíz del Error Cuadrático Medio ajustado por grados de libertad (RECM / RMSE).
+        Aplica el estimador insesgado de la varianza residual según el Teorema de Gauss-Markov,
+        usando (n - m - 1) como denominador, donde m es el grado del polinomio.
+
         Args:
             y (np.ndarray): Target observacional validado del set real.
             y_pred (np.ndarray): Predicción emitida de la máquina de inferencia.
-            
+
         Returns:
-            float: Evaluación absoluta promedial estandarizada del ECM per set.
+            float: Raíz cuadrada del error cuadrático medio ajustado.
+
+        Raises:
+            ValueError: Si los grados de libertad son insuficientes (n <= m + 1).
         """
-        return np.mean((y - y_pred)**2)
+        n = len(y)
+        m = self.grado
+        grados_libertad = n - m - 1
+
+        if grados_libertad <= 0:
+            raise ValueError(
+                f"Grados de libertad insuficientes: n={n}, m={m}. "
+                f"Se necesitan al menos {m + 2} observaciones."
+            )
+
+        return np.sqrt(np.sum((y - y_pred) ** 2) / grados_libertad)
 
     def r2(self, y: np.ndarray, y_pred: np.ndarray) -> float:
         """
@@ -145,15 +159,15 @@ def comparar_modelos(x: np.ndarray, y: np.ndarray) -> int:
         y_train_pred = modelo.predecir(x_train)
         y_test_pred = modelo.predecir(x_test)
 
-        ecm_train = modelo.ecm(y_train, y_train_pred)
-        ecm_test = modelo.ecm(y_test, y_test_pred)
+        ecm_train = modelo.recm(y_train, y_train_pred)
+        ecm_test = modelo.recm(y_test, y_test_pred)
         r2_val = modelo.r2(y_test, y_test_pred)
 
         resultados.append((grado, ecm_test))
 
         print(f"Propuesta Arquitectónica Grado {grado}")
-        print(f"Error Cuadrático Medio Local (Train): {ecm_train:.4f}")
-        print(f"Error Cuadrático Medio Experimental (Test) : {ecm_test:.4f}")
+        print(f"Raíz del Error Cuadrático Medio Local (Train): {ecm_train:.4f}")
+        print(f"Raíz del Error Cuadrático Medio Experimental (Test) : {ecm_test:.4f}")
         print(f"Coeficiente R² Explicativo: {r2_val:.4f}")
         print(f"Estabilidad Numérica del Sistema (Condición): {cond:.2e}")
         print("-" * 40)
@@ -216,7 +230,7 @@ def modo_manual(x: np.ndarray, y: np.ndarray) -> None:
         cond = modelo.ajustar(x, y)
 
         y_pred = modelo.predecir(x)
-        ecm_val = modelo.ecm(y, y_pred)
+        ecm_val = modelo.recm(y, y_pred)
         r2_val = modelo.r2(y, y_pred)
 
         x_suave = np.linspace(min(x), max(x), 300)
@@ -232,7 +246,7 @@ def modo_manual(x: np.ndarray, y: np.ndarray) -> None:
         plt.pause(0.5)
 
         print(f"\nReporte de Rendimiento para Arquitectura Polinomial Nivel: {grado}")
-        print(f"Registro de Variabilidad MSE (ECM): {ecm_val:.4f}")
+        print(f"Registro de Variabilidad RMSE (RECM): {ecm_val:.4f}")
         print(f"Aclaración de Variación Explicada R²: {r2_val:.4f}")
         print(f"Límite Computacional de Condición Múltiple: {cond:.2e}")
 
@@ -304,6 +318,52 @@ def generar_datos_aleatorios() -> Tuple[np.ndarray, np.ndarray]:
 
 
 # ==========================================
+# AJUSTE CON GRADO SELECCIONADO POR CONSOLA
+# ==========================================
+
+def ajustar_grado_especifico(x: np.ndarray, y: np.ndarray) -> None:
+    """
+    Permite al analista introducir un grado polinomial concreto por consola,
+    ajusta el modelo con ese grado sobre el dataset completo y reporta las
+    métricas de calidad (RECM y R²) junto a la gráfica resultante.
+
+    Args:
+        x (np.ndarray): Vector de la variable independiente.
+        y (np.ndarray): Vector de la variable dependiente (observaciones reales).
+    """
+    entrada = input("Ingrese el grado polinomial deseado (entero >= 1): ").strip()
+
+    try:
+        grado = int(entrada)
+        if grado < 1:
+            print("Notificación de Sistema: El grado debe ser un entero mayor o igual a 1.")
+            return
+    except ValueError:
+        print("Notificación de Sistema: Entrada inválida. Debe introducir un número entero.")
+        return
+
+    modelo = RegresionPolinomial(grado)
+    cond = modelo.ajustar(x, y)
+    y_pred = modelo.predecir(x)
+
+    try:
+        recm_val = modelo.recm(y, y_pred)
+    except ValueError as e:
+        print(f"Notificación de Sistema: {e}")
+        return
+
+    r2_val = modelo.r2(y, y_pred)
+
+    print(f"\n--- Métricas del Modelo Polinomial de Grado {grado} ---")
+    print(f"Raíz del Error Cuadrático Medio (RECM): {recm_val:.4f}")
+    print(f"Coeficiente R²:                         {r2_val:.4f}")
+    print(f"Número de condición de la matriz:       {cond:.2e}")
+    print("------------------------------------------------------")
+
+    graficar(x, y, modelo, f"Ajuste Polinomial de Grado {grado} (Selección Manual)")
+
+
+# ==========================================
 # RUTINA DE EJECUCIÓN PRINCIPAL
 # ==========================================
 
@@ -321,8 +381,9 @@ def main() -> None:
         print("1. Ejecutar batería de modelo completo y auto-determinar óptimo métrico.")
         print("2. Visualizar animación algorítmica de encaje progresivo dinámico.")
         print("3. Modo de interacción granular (Sand-Box manual paso a paso).")
-        print("4. Invocar rutina de I/O de relectura de datasets para transición causal diferente.")
-        print("5. Detener flujo de servicio principal e invocar exit(0).")
+        print("4. Ajustar modelo con grado específico seleccionado por consola.")
+        print("5. Invocar rutina de I/O de relectura de datasets para transición causal diferente.")
+        print("6. Detener flujo de servicio principal e invocar exit(0).")
 
         opcion = input("Seleccione el comando estructurado a lanzar: ").strip()
 
@@ -337,11 +398,14 @@ def main() -> None:
 
         elif opcion == "3":
             modo_manual(x_global, y_global)
-            
+
         elif opcion == "4":
-            x_global, y_global = cargar_datos()
+            ajustar_grado_especifico(x_global, y_global)
 
         elif opcion == "5":
+            x_global, y_global = cargar_datos()
+
+        elif opcion == "6":
             print("Liberando recursos y subprocesos, cerrando de manera segura el análisis matemático exploratorio...")
             break
 
